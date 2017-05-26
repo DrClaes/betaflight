@@ -179,7 +179,7 @@ void pgResetFn_ledStripConfig(ledStripConfig_t *ledStripConfig)
 }
 
 static int scaledThrottle;
-static int scaledAux;
+static int auxInput;
 
 static void updateLedRingCounts(void);
 
@@ -444,6 +444,8 @@ static void applyLedFixedLayers()
     for (int ledIndex = 0; ledIndex < ledCounts.count; ledIndex++) {
         const ledConfig_t *ledConfig = &ledStripConfig()->ledConfigs[ledIndex];
         hsvColor_t color = *getSC(LED_SCOLOR_BACKGROUND);
+		hsvColor_t color2 = *getSC(LED_SCOLOR_BACKGROUND); //next color above the one selected, or color 0 if your are at the maximum
+		hsvColor_t color0 = *getSC(LED_SCOLOR_BACKGROUND); //Previous color to the one selected, modulo color count
 
         int fn = ledGetFunction(ledConfig);
         int hOffset = HSV_HUE_MAX;
@@ -484,7 +486,20 @@ static void applyLedFixedLayers()
         }
 
         if (ledGetOverlayBit(ledConfig, LED_OVERLAY_THROTTLE)) {
-            hOffset += scaledAux;
+			
+			if (auxInput < (PWM_RANGE_MIN + PWM_RANGE_MAX)/2) //if below average
+				{
+					color.h = scaleRange(auxInput, PWM_RANGE_MIN, (PWM_RANGE_MIN + PWM_RANGE_MAX) / 2, color0.h, color.h);  //Fade the color smoothly from color to the next color from min to max throttle
+					color.s = scaleRange(auxInput, PWM_RANGE_MIN, (PWM_RANGE_MIN + PWM_RANGE_MAX) / 2, color0.s, color.s);
+					color.v = scaleRange(auxInput, PWM_RANGE_MIN, (PWM_RANGE_MIN + PWM_RANGE_MAX) / 2, color0.v, color.v);
+				}
+			else 
+				{
+					color.h = scaleRange(auxInput, (PWM_RANGE_MAX + PWM_RANGE_MIN) / 2, PWM_RANGE_MAX, color.h, color2.h);  //Fade the color smoothly from color to the next color from min to max throttle
+					color.s = scaleRange(auxInput, (PWM_RANGE_MAX + PWM_RANGE_MIN) / 2, PWM_RANGE_MAX, color.s, color2.s);
+					color.v = scaleRange(auxInput, (PWM_RANGE_MAX + PWM_RANGE_MIN) / 2, PWM_RANGE_MAX, color.v, color2.v);
+				}
+			hOffset = 0;  //this makes throttle function override others, not sure which is best             
         }
 
         color.h = (color.h + hOffset) % (HSV_HUE_MAX + 1);
@@ -955,7 +970,7 @@ void ledStripUpdate(timeUs_t currentTimeUs)
     // apply all layers; triggered timed functions has to update timers
 
     scaledThrottle = ARMING_FLAG(ARMED) ? scaleRange(rcData[THROTTLE], PWM_RANGE_MIN, PWM_RANGE_MAX, 0, 100) : 0;
-    scaledAux = scaleRange(rcData[ledStripConfig()->ledstrip_aux_channel], PWM_RANGE_MIN, PWM_RANGE_MAX, 0, HSV_HUE_MAX + 1);
+    auxInput = rcData[currentLedStripConfig->ledstrip_aux_channel];
 
     applyLedFixedLayers();
 
